@@ -149,7 +149,7 @@ You can also customize chatbot with different configuration
       form: {
         backgroundColor: 'white',
         textColor: 'black',
-      }
+      },
       customCSS: ``, // Add custom CSS styles. Use !important to override default styles
       chatWindow: {
         showTitle: true,
@@ -199,8 +199,9 @@ You can also customize chatbot with different configuration
           color: '#303235',
         },
         dateTimeToggle: {
-          date: true,
-          time: true,
+          showDateTime: true,
+          dateTimeFormat: 'MM/DD/YYYY HH:mm:ss',
+          dateTimeTextColor: '#303235',
         },
         footer: {
           textColor: '#303235',
@@ -212,6 +213,69 @@ You can also customize chatbot with different configuration
     },
   });
 </script>
+```
+
+## WebSocket Configuration
+
+To connect the chat to your Django server via WebSocket, add the following configuration:
+
+```html
+<script type="module">
+  import Chatbot from 'https://cdn.jsdelivr.net/npm/flowise-embed/dist/web.js';
+  Chatbot.init({
+    chatflowid: '91e9c803-5169-4db9-8207-3c0915d71c5f',
+    apiHost: 'http://localhost:3000',
+    useWebSocket: true,
+    websocketUrl: 'ws://localhost:8000/ws/chat/', // Your Django WebSocket URL
+    theme: {
+      // ... other theme configurations
+    },
+  });
+</script>
+```
+
+When `useWebSocket` is enabled and `websocketUrl` is provided, the chat will:
+1. Connect to your Django WebSocket server on component mount
+2. Send user messages via WebSocket instead of HTTP API
+3. Receive bot responses through WebSocket messages
+4. Automatically reconnect if the connection is lost
+
+The WebSocket connection expects messages in the following format:
+
+**From client to server:**
+```json
+{
+  "type": "user_message",
+  "data": {
+    "question": "User's message",
+    "chatId": "unique-chat-id",
+    "uploads": [],
+    "overrideConfig": {},
+    "leadEmail": "",
+    "action": null,
+    "humanInput": null
+  },
+  "chatId": "unique-chat-id"
+}
+```
+
+**From server to client:**
+```json
+{
+  "type": "bot_message",
+  "data": {
+    "text": "Bot's response",
+    "sourceDocuments": [],
+    "usedTools": [],
+    "fileAnnotations": [],
+    "agentReasoning": [],
+    "agentFlowExecutedData": null,
+    "action": null,
+    "artifacts": []
+  },
+  "messageId": "unique-message-id",
+  "chatId": "unique-chat-id"
+}
 ```
 
 ## (Experimental) Proxy Server Setup

@@ -19,7 +19,7 @@
     <div id="root"></div>
     <script type="module">
         import Chatbot from './web.js'
-        
+
         // Example initialization:
         // If your .env contains:
         // agent1=xyz789-uvw456,https://example.com
@@ -29,7 +29,10 @@
         // Then use the environment variable name as chatflowid:
         Chatbot.init({
             chatflowid: 'agent1',    // or 'support', 'salesbot', etc.
-            apiHost: window.location.origin
+            apiHost: window.location.origin,
+            // WebSocket configuration (optional)
+            // useWebSocket: true,
+            // websocketUrl: 'ws://localhost:8000/ws/chat/', // Your Django WebSocket URL
         })
     </script>
 </body>

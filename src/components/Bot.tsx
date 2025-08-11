@@ -36,6 +36,7 @@ import { removeLocalStorageChatHistory, getLocalStorageChatflow, setLocalStorage
 import { cloneDeep } from 'lodash';
 import { FollowUpPromptBubble } from '@/components/bubbles/FollowUpPromptBubble';
 import { fetchEventSource, EventStreamContentType } from '@microsoft/fetch-event-source';
+import { WebSocketClient, WebSocketMessage } from '@/utils/websocket';
 
 export type FileEvent<T = EventTarget> = {
   target: T;
@@ -172,6 +173,8 @@ export type BotProps = {
   dateTimeToggle?: DateTimeToggleTheme;
   renderHTML?: boolean;
   closeBot?: () => void;
+  websocketUrl?: string;
+  useWebSocket?: boolean;
 };
 
 export type LeadsConfig = {
@@ -453,7 +456,6 @@ const FormInputView = (props: {
 };
 
 export const Bot = (botProps: BotProps & { class?: string }) => {
-  // set a default value for showTitle if not set and merge with other props
   const props = mergeProps({ showTitle: true }, botProps);
   let chatContainer: HTMLDivElement | undefined;
   let bottomSpacer: HTMLDivElement | undefined;
@@ -490,31 +492,28 @@ export const Bot = (botProps: BotProps & { class?: string }) => {
   const [pendingActionData, setPendingActionData] = createSignal(null);
   const [feedbackType, setFeedbackType] = createSignal('');
 
-  // start input type
   const [startInputType, setStartInputType] = createSignal('');
   const [formTitle, setFormTitle] = createSignal('');
   const [formDescription, setFormDescription] = createSignal('');
   const [formInputsData, setFormInputsData] = createSignal({});
   const [formInputParams, setFormInputParams] = createSignal([]);
 
-  // drag & drop file input
-  // TODO: fix this type
   const [previews, setPreviews] = createSignal<FilePreview[]>([]);
 
-  // audio recording
   const [elapsedTime, setElapsedTime] = createSignal('00:00');
   const [isRecording, setIsRecording] = createSignal(false);
   const [recordingNotSupported, setRecordingNotSupported] = createSignal(false);
   const [isLoadingRecording, setIsLoadingRecording] = createSignal(false);
 
-  // follow-up prompts
   const [followUpPromptsStatus, setFollowUpPromptsStatus] = createSignal<boolean>(false);
   const [followUpPrompts, setFollowUpPrompts] = createSignal<string[]>([]);
 
-  // drag & drop
   const [isDragActive, setIsDragActive] = createSignal(false);
   const [uploadedFiles, setUploadedFiles] = createSignal<{ file: File; type: string }[]>([]);
   const [fullFileUploadAllowedTypes, setFullFileUploadAllowedTypes] = createSignal('*');
+
+  const [websocketClient, setWebsocketClient] = createSignal<WebSocketClient | null>(null);
+  const [isWebSocketConnected, setIsWebSocketConnected] = createSignal(false);
 
   createMemo(() => {
     const customerId = (props.chatflowConfig?.vars as any)?.customerId;
@@ -522,20 +521,45 @@ export const Bot = (botProps: BotProps & { class?: string }) => {
   });
 
   onMount(() => {
+    if (props.useWebSocket && props.websocketUrl) {
+      const wsClient = new WebSocketClient({
+        url: props.websocketUrl,
+        chatflowid: props.chatflowid,
+        chatId: chatId(),
+        onMessage: (message: WebSocketMessage) => {
+          handleWebSocketMessage(message);
+        },
+        onOpen: () => {
+          setIsWebSocketConnected(true);
+          console.log('WebSocket connected to Django server');
+        },
+        onClose: () => {
+          setIsWebSocketConnected(false);
+          console.log('WebSocket disconnected from Django server');
+        },
+        onError: (error) => {
+          console.error('WebSocket error:', error);
+          setIsWebSocketConnected(false);
+        },
+      });
+      
+      setWebsocketClient(wsClient);
+      wsClient.connect().catch((error) => {
+        console.error('Failed to connect to WebSocket:', error);
+      });
+    }
+
     if (botProps?.observersConfig) {
       const { observeUserInput, observeLoading, observeMessages } = botProps.observersConfig;
       typeof observeUserInput === 'function' &&
-        // eslint-disable-next-line solid/reactivity
         createMemo(() => {
           observeUserInput(userInput());
         });
       typeof observeLoading === 'function' &&
-        // eslint-disable-next-line solid/reactivity
         createMemo(() => {
           observeLoading(loading());
         });
       typeof observeMessages === 'function' &&
-        // eslint-disable-next-line solid/reactivity
         createMemo(() => {
           observeMessages(messages());
         });
@@ -545,12 +569,62 @@ export const Bot = (botProps: BotProps & { class?: string }) => {
     setTimeout(() => {
       chatContainer?.scrollTo(0, chatContainer.scrollHeight);
     }, 50);
+
+    return () => {
+      if (websocketClient()) {
+        websocketClient()?.disconnect();
+      }
+    };
   });
 
   const scrollToBottom = () => {
     setTimeout(() => {
       chatContainer?.scrollTo(0, chatContainer.scrollHeight);
     }, 50);
+  };
+
+  const handleWebSocketMessage = (message: WebSocketMessage) => {
+    switch (message.type) {
+      case 'bot_message':
+        const text = message.data.text || message.data.message || JSON.stringify(message.data);
+        setMessages((prevMessages) => {
+          const allMessages = [...cloneDeep(prevMessages)];
+          const newMessage = {
+            message: text,
+            id: message.messageId,
+            sourceDocuments: message.data?.sourceDocuments,
+            usedTools: message.data?.usedTools,
+            fileAnnotations: message.data?.fileAnnotations,
+            agentReasoning: message.data?.agentReasoning,
+            agentFlowExecutedData: message.data?.agentFlowExecutedData,
+            action: message.data?.action,
+            artifacts: message.data?.artifacts,
+            type: 'apiMessage' as messageType,
+            feedback: null,
+            dateTime: new Date().toISOString(),
+          };
+          allMessages.push(newMessage);
+          addChatMessage(allMessages);
+          return allMessages;
+        });
+        setLoading(false);
+        setUserInput('');
+        setUploadedFiles([]);
+        scrollToBottom();
+        break;
+      
+      case 'error':
+        handleError(message.data?.error || 'WebSocket error occurred');
+        setLoading(false);
+        break;
+      
+      case 'connection_status':
+        setIsWebSocketConnected(message.data?.connected || false);
+        break;
+      
+      default:
+        console.log('Unknown WebSocket message type:', message.type);
+    }
   };
 
   /**
@@ -1038,7 +1112,13 @@ export const Bot = (botProps: BotProps & { class?: string }) => {
 
     if (humanInput) body.humanInput = humanInput;
 
-    if (isChatFlowAvailableToStream()) {
+    if (props.useWebSocket && websocketClient() && isWebSocketConnected()) {
+      websocketClient()?.send({
+        type: 'user_message',
+        data: body,
+        chatId: chatId(),
+      });
+    } else if (isChatFlowAvailableToStream()) {
       fetchResponseFromEventStream(props.chatflowid, body);
     } else {
       const result = await sendMessageQuery({

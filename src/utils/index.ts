@@ -9,14 +9,14 @@ export const isNotEmpty = (value: string | undefined | null): value is string =>
 export const sendRequest = async <ResponseData>(
   params:
     | {
-        url: string;
-        method: string;
-        body?: Record<string, unknown> | FormData;
-        type?: string;
-        headers?: Record<string, any>;
-        formData?: FormData;
-        onRequest?: (request: RequestInit) => Promise<void>;
-      }
+      url: string;
+      method: string;
+      body?: Record<string, unknown> | FormData;
+      type?: string;
+      headers?: Record<string, any>;
+      formData?: FormData;
+      onRequest?: (request: RequestInit) => Promise<void>;
+    }
     | string,
 ): Promise<{ data?: ResponseData; error?: Error }> => {
   try {
@@ -24,9 +24,9 @@ export const sendRequest = async <ResponseData>(
     const headers =
       typeof params !== 'string' && isDefined(params.body)
         ? {
-            'Content-Type': 'application/json',
-            ...params.headers,
-          }
+          'Content-Type': 'application/json',
+          ...params.headers,
+        }
         : undefined;
     let body: string | FormData | undefined = typeof params !== 'string' && isDefined(params.body) ? JSON.stringify(params.body) : undefined;
     if (typeof params !== 'string' && params.formData) body = params.formData;
@@ -150,3 +150,5 @@ export const getCookie = (cname: string): string => {
   }
   return '';
 };
+
+export * from './websocket';
